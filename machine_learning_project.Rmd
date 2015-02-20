@@ -1,0 +1,265 @@
+
+---
+title: "Predicting activity quality of lifting exercises"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+---
+
+## Abstract
+
+It is well-known that physical activity improves life quality and also helps to live longer. The main reason is that physical activity reduces the risk of heart disease, obesity and other fatal diseases. Even for healthy people it is recommended to practice exercise regularly to improve their metabolism. 
+
+In order to have an positive impact in our health it is also required to use a proper technique, this means, "activity quality".
+Recently, using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is possible to collect data about personal activity. In this work, we will  use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Our task is to predict the activity quality of these participants. More information is available from the website http://groupware.les.inf.puc-rio.br/har. 
+
+
+## Loading and Processing the Data
+
+The dataset for our project can be found at the following links, 
+
+A) for the training set https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv and 
+
+B) for the testing set at https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv.
+
+These datasets are part of the original dataset from the link, http://groupware.les.inf.puc-rio.br/static/WLE/WearableComputing_weight_lifting_exercises_biceps_curl_variations.csv.
+
+
+First, we need to understand these datasets. As a first step we load the training dataset and explore it to identify the most relevant variables for our problem. In the webpage of the original dataset they do not provide a description of variables. 
+
+ 
+```{r Preprocessing, echo = TRUE}
+options(scipen = 1, digits = 5)
+# Loading the raw csv file
+set.seed(4543)
+Train <- read.csv("./pml-training.csv",header = TRUE, stringsAsFactors = FALSE, strip.white = TRUE, na.strings = c("NA",""))
+Test <- read.csv("./pml-testing.csv",header = TRUE, stringsAsFactors = FALSE, strip.white = TRUE, na.strings = c("NA",""))
+infoTrain <- dim(Train)
+# 'data.frame':        19622 obs. of  160 variables:
+```
+
+Our training dataset contain `r infoTrain[1]` instances and `r infoTrain[2]` variables.
+We check the variable with missing values. Since variables with more than 80% of missing values does not have an impact on the prediction, we decided to remove them from our dataset. From 160 columns we end up with only 60 variables which contain the relevant information for our prediction.
+
+```{r NAColumn, echo = TRUE}
+TrainNAfree <- Train[ , ! apply( Train , 2 , function(x) {sum(is.na(x))/length(x)}  >0.8 ) ]
+dim(TrainNAfree)
+TrainNAfree$classe <-as.factor(TrainNAfree$classe)
+```
+
+For these dataset we do not have a cookbook with the description of all variables. The only information we have is coming from the webpage
+http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises and the corresponding paper related with the data ( for detail see reference [1]) (http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf). Details about all variable can be retrieved using summary(). 
+Since we are interested in predicting the activity quality using the activity monitors, we remove the variables which are not related with activity monitors, these are the first seven variables that are related with personal information (user name) and detail of the experiment as time and window information (e.g. raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp,new_window, num_window). We also remove the first variable, this is only counting each measurement. 
+
+```{r RemovingV, echo=TRUE}
+Trainfinal <- TrainNAfree[,-c(1:7)]
+str(Trainfinal)
+newDim <- dim(Trainfinal)
+```
+
+## Results
+
+
+Our new dataset contains only `r newDim[2]` variables. 
+We plot all the variables to detect outliers and variables with low variability. We may need to remove variables with small variability from our dataset, i.e. those variables that do not change too much for all the instances. 
+
+
+```{r Variable Plot, echo=TRUE}
+Trainnoclass <- Trainfinal[,-c(53)]
+colnames(Trainnoclass) <- 1:52
+Trainnoclass$index <- seq(1:newDim[1])
+ ```
+ 
+```{r Variable Plot test, echo=FALSE,eval=FALSE}
+# Plotting variable to detect anomalies
+#for (i in 1:52) {
+#plot(Trainnoclass[,53], Trainnoclass[,i],ylab=names(Trainnoclass)[i])
+# Sys.sleep(6.15)
+ ```
+ 
+
+
+We do not see variables with too low variability, I am including a plot of some variables with the lower variability. However, we keep these variables because they may carry important information for our classifier.
+ 
+ ```{r Variable, echo =TRUE}
+library(ggplot2)
+ library(grid)
+ library(gridExtra)
+ p1=qplot(Trainnoclass[,53], Trainnoclass[,1],ylab=names(Trainnoclass)[2],xlab='index')
+ p2=qplot(Trainnoclass[,53], Trainnoclass[,2],ylab=names(Trainnoclass)[2],xlab='index')
+ p3=qplot(Trainnoclass[,53], Trainnoclass[,3],ylab=names(Trainnoclass)[2],xlab='index')
+ p4=qplot(Trainnoclass[,53], Trainnoclass[,4],ylab=names(Trainnoclass)[2],xlab='index')
+ p5=qplot(Trainnoclass[,53], Trainnoclass[,5],ylab=names(Trainnoclass)[2],xlab='index')
+ p6=qplot(Trainnoclass[,53], Trainnoclass[,6],ylab=names(Trainnoclass)[2],xlab='index')
+ grid.arrange(p1, p2, p3, p4, p5 ,p6, ncol = 3, main = "Figure 1")
+ ```
+
+We found few outliers in our data. The number of outliers is so small compared with the number of instances we have in our data that we do not remove them. If we see some indication that these few outliers are deteriorating our classifier, we will remove them later. 
+ 
+ ```{r Outlier, echo =TRUE}
+ library(ggplot2)
+ library(grid)
+ library(gridExtra)
+ p1=qplot(Trainnoclass[,53], Trainnoclass[,31],ylab=names(Trainnoclass)[2],xlab='index')
+ p2=qplot(Trainnoclass[,53], Trainnoclass[,32],ylab=names(Trainnoclass)[2],xlab='index')
+ p3=qplot(Trainnoclass[,53], Trainnoclass[,33],ylab=names(Trainnoclass)[2],xlab='index')
+ p4=qplot(Trainnoclass[,53], Trainnoclass[,44],ylab=names(Trainnoclass)[2],xlab='index')
+ p5=qplot(Trainnoclass[,53], Trainnoclass[,45],ylab=names(Trainnoclass)[2],xlab='index')
+ p6=qplot(Trainnoclass[,53], Trainnoclass[,46],ylab=names(Trainnoclass)[2],xlab='index')
+ grid.arrange(p1, p2, p3, p4, p5 ,p6, ncol = 3, main = "Figure 2")
+ ```
+ 
+Now, we plot the correlation matrix to detect which variables are strongly linear correlated. In this plot we show the linear correlation coefficient for each pair of variable. When this coefficient is closer to one it means that they are very correlated. Figure 3 shows that there are several linear strongly correlated variables.
+
+ ```{r, echo=TRUE}
+library(corrplot)
+Trainplot <- Trainnoclass[,-c(53)]
+ M <- cor(Trainplot)
+ corrplot(M, method = "circle",tl.cex = 0.7) #plot matrix
+title("Figure 3", line = -1.5)
+```
+
+
+Here we use numbers for the column name for a better understanding and visualization. 
+From these plots we can see that some variables are very correlated, for instance, the first four variables are very correlated and these are "roll_belt", "pitch_belt","yaw_belt","total_accel_belt". Also we see other regions with large correlation, variable, 4, 8 and 9 ("total_accel_belt",accel_belt_y","accel_belt_z") also variables "magnet_arm_x" "magnet_arm_y" "magnet_arm_z". 
+Here are the first ten variables plotted together. 
+ 
+```{r Plot of variables, echo=TRUE}
+Train1_10 <- Trainnoclass[,1:10]
+plot(Train1_10, main="Figure 4")
+```
+
+Figure 4 shows that some variables (from 1 to 10) are, in fact, correlated as it was shown from the correlation plot. Since we have too many instances in our dataset it is hard to see from this plot the correlation between variables. 
+
+
+Now, we want to remove variables that are too correlated. We use the correlation matrix and remove these variables to reduce pair-wise correlation. The cutoff value of the correlation coefficient is 0.75, so, if two variables shows a correlation coefficient larger than 0.75, we remove one of the variable from our dataset. This can be justified based on the fact that when two variables are strongly linear correlated we can say that they are linear dependent, i.e, one variable can be written as a linear combination of the other variable. So, we do not need to consider both variables, including only one will carry the information of both variables. 
+
+
+```{r Removing Correlated Variables, echo=TRUE}
+library(caret)
+ M <- cor(Trainnoclass)
+ M <- cor(Trainfinal[,-c(53)])
+c1 <- findCorrelation(M, cutoff = .75, verbose = FALSE)
+TrainnoCorr <- Trainfinal
+TrainnoCorr <- TrainnoCorr[,-c1]
+dimCorr <- dim(TrainnoCorr)
+```
+ 
+We have ended up with a reduced dataset of `r dimCorr[2]` variables. Here is the correlation plot with the new set of variables.
+
+```{r Correlation Plot, echo=TRUE}
+MnoCorr <- cor(TrainnoCorr[,-c(33)])
+corrplot(MnoCorr, method = "circle",tl.cex = 0.7) #plot matrix
+title("Figure 5", line = -1)
+```
+
+This new correlation matrix does not show too much correlation between pair of variables as the first plot.  
+ 
+
+Now, we have a dataset with variable containing relevant information to make prediction. We may need to check the distribution of the variables to detect some skew variables, or also to find some variables with large values compared with other that need to be regularized. For the present project, we decided to keep the variable as it is and make a try in our predictor, if we see that our predictor has a bad quality we need to be back to this point and get a better quality for our dataset. 
+
+
+Random Forest (RF) is used here as our machine learning algorithm. RF is very powerful and very reliable for classification problem. 
+We set by now the number of tree equal to 50. We included the flag importance=TRUE to be able to obtain later the most important variable from our classifier. 
+
+```{r Random Forest,echo=TRUE}
+library(randomForest)
+TrainnoCorr$classe <- Trainfinal$classe
+modrfnoCorr <- randomForest(formula = classe ~ ., data = TrainnoCorr, ntree = 50, importance=TRUE) 
+modrfnoCorr
+prffinal = predict(modrfnoCorr,TrainnoCorr)
+```
+
+
+I may need to generate a validation set to verify how good my prediction is. But since I am using random forest, I can use the OOB prediction from the algorithm as an estimation for the OOB (out-of-bag) error.
+I perfomed an optimization analysis to find the best value of ntree for our prediction:
+
+```{r Random Forest error N,echo=TRUE}
+ modrfnoCorr <- randomForest(formula = classe ~ ., data = TrainnoCorr, ntree = 500, importance=TRUE,do.trace=100) 
+ ```
+
+From previous data, we found that the optimal values of ntree is 300. For this value the OOB error converge to 0.42%. The value of OOB error of 0.41% for ntree=400 does not look stable because it increases again to 0.42% for ntree=500. 
+ 
+If we separate the data set in k-folds and perform a k-fold cross-validation the OOB error (or error=1-accuracy) will be very similar (for large value of k) to the value from the random forest estimation (for more details, see the link http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm). Note that inside of random forest they perform a leave one out cross validation that corresponds to use k-fold cross-validation where k is equal to the number of data sample, so, the k-fold cross validation error will be closer to the OOB error when k be very large.
+The main point is that Random Forest algorithm estimates internally the set error, so we are getting an unbiased estimate of the train/test set error. The random forest algorithm in each tree uses a different bootstrap sample from the original data and also one-third of these sample are not going to be part of the bootstrap sample to generate the tree. If we compare with the cross-validation method, what random forest is doing is very similar to use cross-validation. In some sense, we are doing a cross-validation in each step. In principle, random forest does not suffer of overfitting too much, however it is always better to tune some parameter for a better prediction of an unknown set.  Also note the comment about random forest from the following link (http://topepo.github.io/caret/varimp.html) "For each tree, the prediction accuracy on the out-of-bag portion of the data is recorded. Then the same is done after permuting each predictor variable. The difference between the two accuracies are then averaged over all trees, and normalized by the standard error.". 
+
+
+Now, we find the most important variables from the random forest algorithm:
+
+
+```{r Random Forest imp,echo=TRUE}
+importance(modrfnoCorr, type=1)
+```
+
+From last result we can conclude that all the variables we included in our model are important. We do not see large difference between variable importance.
+
+
+As a final step, we can try a 2-fold cross-validation and compare the error = 1 - accuracy with that reported from random forest for ntree=200. So, first, we separate the data in two folds,
+
+```{r CrossValid, echo=TRUE}
+ inTrain <- createDataPartition(TrainnoCorr$classe,p=0.5,list=FALSE)
+ foldn1 <- TrainnoCorr[inTrain,]
+ foldn2 <- TrainnoCorr[-inTrain,]
+```
+
+
+then we train the classifier using the random forest algorithm and generate the error.
+Now, we train on fold1 and test on fold2.
+
+```{r Train12,echo=TRUE}
+modfoldn1 <- randomForest(formula = classe ~ ., data = foldn1, ntree = 200) 
+predT1test2 <- predict(modfoldn1,foldn2)
+confusionMatrix(foldn2$classe,predT1test2)
+ac1 <- as.data.frame(confusionMatrix(foldn2$classe,predT1test2)$overall)[1,1]
+```
+
+We train on fold2 and test on fold1.
+
+```{r Train21,echo=TRUE}
+modfoldn2 <- randomForest(formula = classe ~ ., data = foldn2, ntree = 200) 
+predT2test1 <- predict(modfoldn2,foldn1)
+confusionMatrix(foldn1$classe,predT2test1)
+ac2 <- as.data.frame(confusionMatrix(foldn1$classe,predT2test1)$overall)[1,1]
+```
+
+From previous results we can calculate the average error `r (1.-(ac2+ac1)/2.)*100`%. As we can see this value is larger that the OOB from the random forest algorithm as we expected. They will approach each other only when k is large. I may be that one of the reason that our classifier works very well on our dataset is because our data is balanced, this means that the distribution by class (number of instances) is not so different for every class (classe A = 2803 instances,  B = 1886,  C = 1719,  D = 1599 and  E= 1805).
+
+
+So, now with the optimized value of ntree and we are ready to make predicton on the test set
+
+```{r Submit, echo=TRUE}
+Test[,160] <- NULL
+predfinal = predict(modrfnoCorr,Test)
+submitnoCorr <- as.character(predfinal)
+submitnoCorr
+```
+
+Since we do not have the actual value for the variable classe for the test set we can not say whether this result is good or not. However, since our error was very small (~ 0.42%) we are expecting good prediction.
+Note that we need to remove the last variable from the Test set, this variable does not appear in the training set and without removing it we can not make prediction. Variables we have already included in our Test set should be in the Train set, we can not make a prediction using a variable we have not trained before. However, our Train set can have less variables that our test set, in this case, in the prediction process our classifier will not use these variables.
+
+
+```{r SubmitTest, echo=FALSE, results='hide', eval=FALSE}
+#This part is to submit the result in the second part of the assignment. 
+Test[,160] <- NULL
+prffinalTestnoCorr = predict(modrfnoCorr,Test)
+submitnoCorr <- as.character(prffinalTestnoCorr)
+submittest <- as.character(prffinalTest)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+#pml_write_files(submittest)
+# submit
+# [1] "B" "A" "B" "A" "A" "E" "D" "B" "A" "A" "B" "C" "B" "A" "E" "E" "A" "B" "B" "B"
+```
+
+
+# References
+
+
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. (Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3S7F1U8XM)
+
